@@ -384,6 +384,13 @@ function GetPay(email, count, selectType, minCount, allcount, fund, coupon) {
     } else {
         var function_order = 'createcart';
     }
+    
+    // Обработка оплаты через YooKassa (fund=30)
+    if (parseInt(fund) === 30) {
+        handleYooKassaPayment(email, count, selectType, coupon);
+        return;
+    }
+    
     if ($("meta[lang_cart]").length == 1  && $("meta[direct_order]").length == 0) {
         var path = '/en/order/';
     } else {
@@ -557,4 +564,66 @@ function GetPay(email, count, selectType, minCount, allcount, fund, coupon) {
     //         showerr(res.error);
     //     }
     // });
+}
+
+/**
+ * Обработка оплаты через YooKassa
+ * Согласно документации: https://yookassa.ru/developers/payment-acceptance/getting-started/quick-start
+ */
+function handleYooKassaPayment(email, count, selectType, coupon) {
+    var amount = parseFloat($('.fn_setproduct_total').text());
+    var description = $('.fn_setproduct_title_val').val() || 'Покупка товара';
+    
+    if (isNaN(amount) || amount <= 0) {
+        showerr('Ошибка: некорректная сумма платежа');
+        return;
+    }
+    
+    if (amount < 10) {
+        showerr('Минимальная сумма для YooKassa: 10 рублей');
+        return;
+    }
+    
+    $('body').data('orderWait', 1);
+    
+    $.ajax({
+        url: 'PHP/yookassa_create_payment.php',
+        method: 'POST',
+        dataType: 'json',
+        data: {
+            email: email,
+            amount: amount,
+            count: count,
+            type: selectType,
+            description: description,
+            copupon: coupon
+        },
+        success: function(data) {
+            $('body').data('orderWait', 0);
+            
+            if (data.ok === 'TRUE' && data.redirect === 'yes') {
+                // Редирект на страницу оплаты YooKassa
+                window.location.href = data.url;
+            } else if (data.error) {
+                showerr(data.error);
+            } else {
+                showerr('Произошла ошибка при создании платежа');
+            }
+        },
+        error: function(jqXHR, exception) {
+            $('body').data('orderWait', 0);
+            
+            if (jqXHR.status === 0) {
+                showerr('Нет подключения к интернету');
+            } else if (jqXHR.status == 404) {
+                showerr('Обработчик платежей не найден. Проверьте путь к PHP/yookassa_create_payment.php');
+            } else if (jqXHR.status == 500) {
+                showerr('Ошибка сервера (500)');
+            } else {
+                showerr('Произошла ошибка при создании платежа: ' + jqXHR.status);
+            }
+            
+            console.error('YooKassa payment error:', jqXHR, exception);
+        }
+    });
 }
